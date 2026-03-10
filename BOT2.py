@@ -54,4 +54,110 @@ class RegistrationView(discord.ui.View):
     def __init__(self): super().__init__(timeout=None)
     @discord.ui.button(label="📝 TCG IDを登録する", style=discord.ButtonStyle.primary, custom_id="reg_btn")
     async def open_modal(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await interaction.response.send
+        await interaction.response.send_modal(RegistrationModal())
+
+class RegionButtons(discord.ui.View):
+    def __init__(self):
+        super().__init__(timeout=None)
+        self.regions = ["東北・北海道", "関東", "北信越", "中部", "関西", "四国・中国", "九州・沖縄"]
+    async def update_role(self, it, name):
+        guild = it.guild; member = it.user
+        to_rem = [discord.utils.get(guild.roles, name=r) for r in self.regions if discord.utils.get(guild.roles, name=r) in member.roles]
+        if to_rem: await member.remove_roles(*[r for r in to_rem if r])
+        new = discord.utils.get(guild.roles, name=name)
+        if new: await member.add_roles(new); await it.response.send_message(f"✅ 「{name}」に設定しました！", ephemeral=True)
+
+    @discord.ui.button(label="東北・北海道", style=discord.ButtonStyle.primary, custom_id="r1")
+    async def r1(self, it, b): await self.update_role(it, "東北・北海道")
+    @discord.ui.button(label="関東", style=discord.ButtonStyle.primary, custom_id="r2")
+    async def r2(self, it, b): await self.update_role(it, "関東")
+    @discord.ui.button(label="北信越", style=discord.ButtonStyle.primary, custom_id="r3")
+    async def r3(self, it, b): await self.update_role(it, "北信越")
+    @discord.ui.button(label="中部", style=discord.ButtonStyle.primary, custom_id="r4")
+    async def r4(self, it, b): await self.update_role(it, "中部")
+    @discord.ui.button(label="関西", style=discord.ButtonStyle.primary, custom_id="r5")
+    async def r5(self, it, b): await self.update_role(it, "関西")
+    @discord.ui.button(label="四国・中国", style=discord.ButtonStyle.primary, row=1, custom_id="r6")
+    async def r6(self, it, b): await self.update_role(it, "四国・中国")
+    @discord.ui.button(label="九州・沖縄", style=discord.ButtonStyle.primary, row=1, custom_id="r7")
+    async def r7(self, it, b): await self.update_role(it, "九州・沖縄")
+
+# --- 3. ボット本体 ---
+class MyBot(commands.Bot):
+    def __init__(self):
+        intents = discord.Intents.default()
+        intents.message_content = intents.members = intents.guilds = intents.voice_states = True
+        super().__init__(command_prefix='!', intents=intents)
+        self.active_messages = {}
+        self.last_link = None
+        self.match_starts = {}
+
+    async def on_ready(self):
+        self.add_view(ConsentView()); self.add_view(RegistrationView()); self.add_view(RegionButtons())
+        if not self.check_twitter.is_running(): self.check_twitter.start()
+        print(f'Logged in as {self.user.name} (Stable Mode)')
+
+    @tasks.loop(minutes=15)
+    async def check_twitter(self):
+        try:
+            # ★ RenderのIPブロックを回避する「人間偽装」通信
+            headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'}
+            response = requests.get(RSS_URL, headers=headers, timeout=15)
+            feed = feedparser.parse(response.content)
+            
+            if not feed.entries: return
+            latest = feed.entries[0]
+            if self.last_link == latest.link: return
+            
+            if any(k in latest.title for k in KEYWORDS):
+                ch = self.get_channel(ANNOUNCE_CH_ID)
+                if ch: await ch.send(f"📢 **Twitter速報**\n{latest.title}\n{latest.link}")
+            self.last_link = latest.link
+        except: pass
+
+    async def on_voice_state_update(self, member, before, after):
+        if before.channel is None and after.channel is not None and len(after.channel.members) == 2:
+            p1, p2 = after.channel.members[0], after.channel.members[1]
+            roles = ["先攻", "後攻"]; random.shuffle(roles)
+            msg = await after.channel.send(f"🎲 **自動割り振り**\n{p1.mention} ⇒ **{roles[0]}**\n{p2.mention} ⇒ **{roles[1]}**", silent=True)
+            self.active_messages[after.channel.id] = msg
+            self.match_starts[after.channel.id] = {"time": datetime.datetime.now(), "p1": p1.name, "p2": p2.name}
+        elif before.channel is not None and len(before.channel.members) < 2:
+            if before.channel.id in self.active_messages:
+                try: await self.active_messages[before.channel.id].delete()
+                except: pass
+                del self.active_messages[before.channel.id]
+            if before.channel.id in self.match_starts:
+                data = self.match_starts.pop(before.channel.id)
+                dur = round((datetime.datetime.now() - data["time"]).total_seconds() / 60, 1)
+                try: requests.post(GAS_URL, json={"type": "match_history", "p1_name": data["p1"], "p2_name": data["p2"], "duration": f"{dur}分", "channel": before.channel.name}, timeout=5)
+                except: pass
+
+bot = MyBot()
+
+@bot.command()
+@commands.has_permissions(administrator=True)
+async def rules(ctx):
+    emb = discord.Embed(title="✅ 参加の承認", description="上記のルールをすべて読み、同意いただける方は、以下のボタンを押してください。\n押下後、対戦募集チャンネル等の閲覧・書き込みが可能になります。", color=discord.Color.green())
+    await ctx.send(embed=emb, view=ConsentView())
+
+@bot.command()
+@commands.has_permissions(administrator=True)
+async def setup_registration(ctx):
+    emb = discord.Embed(title="📝 TCG IDの登録", description="以下のボタンを押してIDを入力してください。", color=discord.Color.orange())
+    await ctx.send(embed=emb, view=RegistrationView())
+
+@bot.command()
+@commands.has_permissions(administrator=True)
+async def setup_roles(ctx):
+    emb = discord.Embed(title="地域選択", description="所属地域を選択してください", color=discord.Color.blue())
+    await ctx.send(embed=emb, view=RegionButtons())
+
+@bot.command()
+@commands.has_permissions(administrator=True)
+async def setup_all(ctx):
+    await rules(ctx); await setup_roles(ctx); await setup_registration(ctx)
+
+if __name__ == "__main__":
+    Thread(target=run_flask).start()
+    bot.run(TOKEN)
