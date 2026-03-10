@@ -8,53 +8,68 @@ import feedparser
 from threading import Thread
 from flask import Flask
 
-# ================= 設定項目 =================
+# ================= 設定項目（スクリーンショット 180849.png より） =================
 TOKEN = os.getenv('DISCORD_TOKEN')
 GAS_URL = os.getenv('GAS_URL')
 ROLE_ID = 1478266543480766716        # 承認用
 ANNOUNCE_CH_ID = 1476095569595334718 # Twitter用
+WELCOME_CH_ID = 1464168951012393021  # 挨拶用
 RSS_URL = 'https://nitter.perennialte.ch/ucg_jp/rss'
-KEYWORDS = ['カードデザイン', '公開', '新カード']
-# ============================================
+KEYWORDS = ['新カード', '公開', '速報', 'メンテナンス', 'カードデザイン']
+# ==============================================================================
 
+# Render居眠り防止用
 app = Flask('')
 @app.route('/')
 def home(): return "Bot is Online!"
 def run_flask(): app.run(host='0.0.0.0', port=8080)
 
-# --- 1. TCG ID登録（タイムアウト対策版） ---
+# --- 1. TCG ID登録（3秒ルール対策・モーダル） ---
 class RegistrationModal(discord.ui.Modal, title='TCG IDの登録'):
-    tcg_id_input = discord.ui.TextInput(label='あなたのTCG ID', placeholder='例: 12345678', min_length=1, required=True)
+    tcg_id_input = discord.ui.TextInput(
+        label='あなたのTCG IDを入力してください',
+        placeholder='例: 12345678',
+        min_length=1,
+        required=True
+    )
     
     async def on_submit(self, interaction: discord.Interaction):
-        # 3秒ルール回避：まず「受け付けました」と応答
+        # タイムアウト回避：まず応答を保留にする
         await interaction.response.defer(ephemeral=True)
         
         if GAS_URL:
             payload = {"type": "register", "user_id": str(interaction.user.id), "tcg_id": self.tcg_id_input.value}
-            try: requests.post(GAS_URL, json=payload, timeout=10)
-            except: pass
+            try:
+                requests.post(GAS_URL, json=payload, timeout=10)
+            except Exception as e:
+                print(f"GAS送信エラー: {e}")
             
         await interaction.followup.send(f"✅ ID: `{self.tcg_id_input.value}` を登録しました！", ephemeral=True)
 
-class RegistrationView(discord.ui.View):
-    def __init__(self): super().__init__(timeout=None)
-    @discord.ui.button(label="📝 TCG IDを登録する", style=discord.ButtonStyle.primary, custom_id="reg_btn_final")
-    async def open_modal(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await interaction.response.send_modal(RegistrationModal())
-
-# --- 2. 承認機能 ---
+# --- 2. 承認用ボタン ---
 class ConsentView(discord.ui.View):
-    def __init__(self): super().__init__(timeout=None)
-    @discord.ui.button(label="✅ 同意して全機能を解放", style=discord.ButtonStyle.green, custom_id="consent_btn_final")
+    def __init__(self):
+        super().__init__(timeout=None)
+
+    @discord.ui.button(label="✅ 同意して全機能を解放", style=discord.ButtonStyle.green, custom_id="consent_btn_v_final")
     async def agree(self, interaction: discord.Interaction, button: discord.ui.Button):
         role = interaction.guild.get_role(ROLE_ID)
         try:
             await interaction.user.add_roles(role)
             await interaction.response.send_message("承認されました！", ephemeral=True)
-        except: await interaction.response.send_message("エラー：権限を確認してください。", ephemeral=True)
+        except:
+            await interaction.response.send_message("エラー：権限を確認してください。", ephemeral=True)
 
-# --- 3. 地域選択（自動削除機能付き） ---
+# --- 3. ID登録用ボタン（画像 181841.png 完全再現） ---
+class RegistrationView(discord.ui.View):
+    def __init__(self):
+        super().__init__(timeout=None)
+
+    @discord.ui.button(label="📝 TCG IDを登録する", style=discord.ButtonStyle.primary, custom_id="reg_id_btn_sep")
+    async def open_modal(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.send_modal(RegistrationModal())
+
+# --- 4. 地域選択用ボタン（画像 181841.png 完全再現） ---
 class RegionButtons(discord.ui.View):
     def __init__(self):
         super().__init__(timeout=None)
@@ -63,29 +78,32 @@ class RegionButtons(discord.ui.View):
     async def update_role(self, interaction: discord.Interaction, target_role_name: str):
         guild = interaction.guild
         member = interaction.user
+        # 重複ロール削除
         roles_to_remove = [discord.utils.get(guild.roles, name=r) for r in self.regions if discord.utils.get(guild.roles, name=r) in member.roles]
-        if roles_to_remove: await member.remove_roles(*[r for r in roles_to_remove if r])
+        if roles_to_remove:
+            await member.remove_roles(*[r for r in roles_to_remove if r])
+        
         new_role = discord.utils.get(guild.roles, name=target_role_name)
         if new_role:
             await member.add_roles(new_role)
             await interaction.response.send_message(f"✅ 「{target_role_name}」に設定しました！", ephemeral=True)
 
-    @discord.ui.button(label="東北・北海道", style=discord.ButtonStyle.primary, row=0, custom_id="r1")
+    @discord.ui.button(label="東北・北海道", style=discord.ButtonStyle.primary, row=0, custom_id="reg_tohoku")
     async def tohoku(self, it, btn): await self.update_role(it, "東北・北海道")
-    @discord.ui.button(label="関東", style=discord.ButtonStyle.primary, row=0, custom_id="r2")
+    @discord.ui.button(label="関東", style=discord.ButtonStyle.primary, row=0, custom_id="reg_kanto")
     async def kanto(self, it, btn): await self.update_role(it, "関東")
-    @discord.ui.button(label="北信越", style=discord.ButtonStyle.primary, row=0, custom_id="r3")
+    @discord.ui.button(label="北信越", style=discord.ButtonStyle.primary, row=0, custom_id="reg_hokushinetsu")
     async def hokushinetsu(self, it, btn): await self.update_role(it, "北信越")
-    @discord.ui.button(label="中部", style=discord.ButtonStyle.primary, row=0, custom_id="r4")
+    @discord.ui.button(label="中部", style=discord.ButtonStyle.primary, row=0, custom_id="reg_chubu")
     async def chubu(self, it, btn): await self.update_role(it, "中部")
-    @discord.ui.button(label="関西", style=discord.ButtonStyle.primary, row=0, custom_id="r5")
+    @discord.ui.button(label="関西", style=discord.ButtonStyle.primary, row=0, custom_id="reg_kansai")
     async def kansai(self, it, btn): await self.update_role(it, "関西")
-    @discord.ui.button(label="四国・中国", style=discord.ButtonStyle.primary, row=1, custom_id="r6")
-    async def shikoku(self, it, btn): await self.update_role(it, "四国・中国")
-    @discord.ui.button(label="九州・沖縄", style=discord.ButtonStyle.primary, row=1, custom_id="r7")
-    async def kyushu(self, it, btn): await self.update_role(it, "九州・沖縄")
+    @discord.ui.button(label="四国・中国", style=discord.ButtonStyle.primary, row=1, custom_id="reg_shikoku")
+    async def shikoku_chugoku(self, it, btn): await self.update_role(it, "四国・中国")
+    @discord.ui.button(label="九州・沖縄", style=discord.ButtonStyle.primary, row=1, custom_id="reg_kyushu")
+    async def kyushu_okinawa(self, it, btn): await self.update_role(it, "九州・沖縄")
 
-# --- 4. ボット本体 ---
+# --- 5. ボット本体 ---
 class MyBot(commands.Bot):
     def __init__(self):
         intents = discord.Intents.default()
@@ -96,7 +114,6 @@ class MyBot(commands.Bot):
         self.match_starts = {}
 
     async def on_ready(self):
-        # 永続化の設定
         self.add_view(ConsentView())
         self.add_view(RegistrationView())
         self.add_view(RegionButtons())
@@ -138,12 +155,40 @@ class MyBot(commands.Bot):
 
 bot = MyBot()
 
+# --- 6. 個別・一括コマンド（画像 181841.png の内容と完全に一致） ---
+
+@bot.command()
+@commands.has_permissions(administrator=True)
+async def setup_roles(ctx):
+    """地域選択パネルを個別に出力"""
+    emb = discord.Embed(
+        title="地域選択", 
+        description="所属地域を選択してください", 
+        color=discord.Color.blue()
+    )
+    await ctx.send(embed=emb, view=RegionButtons())
+
+@bot.command()
+@commands.has_permissions(administrator=True)
+async def setup_registration(ctx):
+    """ID登録パネルを個別に出力"""
+    emb = discord.Embed(
+        title="📝 TCG IDの登録", 
+        description="以下のボタンを押してIDを入力してください。", 
+        color=discord.Color.orange()
+    )
+    await ctx.send(embed=emb, view=RegistrationView())
+
 @bot.command()
 @commands.has_permissions(administrator=True)
 async def setup_all(ctx):
+    """承認・地域・ID登録を順番に個別メッセージとして送信"""
+    # 1. 承認パネル
     await ctx.send(embed=discord.Embed(title="✅ 承認", description="ボタンを押してください。", color=discord.Color.green()), view=ConsentView())
-    await ctx.send(embed=discord.Embed(title="🌍 地域選択", description="地域を選んでください。", color=discord.Color.blue()), view=RegionButtons())
-    await ctx.send(embed=discord.Embed(title="📝 ID登録", description="登録はこちらから。", color=discord.Color.orange()), view=RegistrationView())
+    # 2. 地域パネル（画像 181841.png 再現）
+    await setup_roles(ctx)
+    # 3. ID登録パネル（画像 181841.png 再現）
+    await setup_registration(ctx)
 
 if __name__ == "__main__":
     Thread(target=run_flask).start()
