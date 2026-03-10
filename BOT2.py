@@ -22,7 +22,7 @@ app = Flask('')
 def home(): return "Bot is Online!"
 def run_flask(): app.run(host='0.0.0.0', port=8080)
 
-# --- 1. TCG ID登録モーダル（3秒ルール対策） ---
+# --- 1. TCG ID登録モーダル（3秒ルール対策済み） ---
 class RegistrationModal(discord.ui.Modal, title='TCG IDの登録'):
     tcg_id_input = discord.ui.TextInput(
         label='あなたのTCG IDを入力してください',
@@ -40,6 +40,8 @@ class RegistrationModal(discord.ui.Modal, title='TCG IDの登録'):
         await interaction.followup.send(f"✅ ID: `{self.tcg_id_input.value}` を登録しました！", ephemeral=True)
 
 # --- 2. 各種ボタンビュー ---
+
+# 承認用（095821.png 再現）
 class ConsentView(discord.ui.View):
     def __init__(self): super().__init__(timeout=None)
     @discord.ui.button(label="✅ 同意して全機能を解放", style=discord.ButtonStyle.green, custom_id="consent_btn_v_final")
@@ -51,12 +53,14 @@ class ConsentView(discord.ui.View):
         except:
             await interaction.response.send_message("エラー：ボットの役職をメンバーより上に上げてください。", ephemeral=True)
 
+# ID登録用（094447.png 再現）
 class RegistrationView(discord.ui.View):
     def __init__(self): super().__init__(timeout=None)
     @discord.ui.button(label="📝 TCG IDを登録する", style=discord.ButtonStyle.primary, custom_id="reg_id_btn_sep")
     async def open_modal(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.send_modal(RegistrationModal())
 
+# 地域選択用（181841.png 再現）
 class RegionButtons(discord.ui.View):
     def __init__(self):
         super().__init__(timeout=None)
@@ -92,81 +96,3 @@ class MyBot(commands.Bot):
     def __init__(self):
         intents = discord.Intents.default()
         intents.message_content = intents.members = intents.guilds = intents.voice_states = True
-        super().__init__(command_prefix='!', intents=intents)
-        self.active_messages = {}
-        self.last_link = None
-        self.match_starts = {}
-
-    async def on_ready(self):
-        self.add_view(ConsentView()); self.add_view(RegistrationView()); self.add_view(RegionButtons())
-        if not self.check_twitter.is_running(): self.check_twitter.start()
-        print(f'Logged in as {self.user.name}')
-
-    @tasks.loop(minutes=15)
-    async def check_twitter(self):
-        try:
-            feed = feedparser.parse(RSS_URL)
-            if not feed.entries: return
-            latest = feed.entries[0]
-            if self.last_link != latest.link and any(k in latest.title for k in KEYWORDS):
-                ch = self.get_channel(ANNOUNCE_CH_ID)
-                if ch: await ch.send(f"📢 **Twitter速報**\n{latest.title}\n{latest.link}")
-                self.last_link = latest.link
-        except: pass
-
-    async def on_voice_state_update(self, member, before, after):
-        if before.channel is None and after.channel is not None and len(after.channel.members) == 2:
-            p1, p2 = after.channel.members[0], after.channel.members[1]
-            roles = ["先攻", "後攻"]; random.shuffle(roles)
-            msg = await after.channel.send(f"🎲 **自動割り振り**\n{p1.mention} ⇒ **{roles[0]}**\n{p2.mention} ⇒ **{roles[1]}**", silent=True)
-            self.active_messages[after.channel.id] = msg
-            self.match_starts[after.channel.id] = {"time": datetime.datetime.now(), "p1": p1.name, "p2": p2.name}
-        elif before.channel is not None and len(before.channel.members) < 2:
-            if before.channel.id in self.active_messages:
-                try: await self.active_messages[before.channel.id].delete()
-                except: pass
-                del self.active_messages[before.channel.id]
-            if before.channel.id in self.match_starts:
-                data = self.match_starts.pop(before.channel.id)
-                dur = round((datetime.datetime.now() - data["time"]).total_seconds() / 60, 1)
-                if GAS_URL:
-                    payload = {"type": "match_history", "p1_name": data["p1"], "p2_name": data["p2"], "duration": f"{dur}分", "channel": before.channel.name}
-                    try: requests.post(GAS_URL, json=payload, timeout=5)
-                    except: pass
-
-bot = MyBot()
-
-# --- 4. コマンド設定（個別・一括） ---
-
-@bot.command()
-@commands.has_permissions(administrator=True)
-async def rules(ctx):
-    """【個別】承認ボタンパネル"""
-    emb = discord.Embed(title="✅ 承認", description="ボタンを押して全機能を解放してください。", color=discord.Color.green())
-    await ctx.send(embed=emb, view=ConsentView())
-
-@bot.command()
-@commands.has_permissions(administrator=True)
-async def setup_roles(ctx):
-    """【個別】地域選択パネル"""
-    emb = discord.Embed(title="地域選択", description="所属地域を選択してください", color=discord.Color.blue())
-    await ctx.send(embed=emb, view=RegionButtons())
-
-@bot.command()
-@commands.has_permissions(administrator=True)
-async def setup_registration(ctx):
-    """【個別】ID登録パネル"""
-    emb = discord.Embed(title="📝 TCG IDの登録", description="以下のボタンを押してIDを入力してください。", color=discord.Color.orange())
-    await ctx.send(embed=emb, view=RegistrationView())
-
-@bot.command()
-@commands.has_permissions(administrator=True)
-async def setup_all(ctx):
-    """【一括】承認・地域・ID登録を順番に出力"""
-    await rules(ctx)
-    await setup_roles(ctx)
-    await setup_registration(ctx)
-
-if __name__ == "__main__":
-    Thread(target=run_flask).start()
-    bot.run(TOKEN)
