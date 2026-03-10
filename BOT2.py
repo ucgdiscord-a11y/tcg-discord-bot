@@ -131,3 +131,42 @@ class MyBot(commands.Bot):
                 dur = round((datetime.datetime.now() - data["time"]).total_seconds() / 60, 1)
                 if GAS_URL:
                     payload = {"type": "match_history", "p1_name": data["p1"], "p2_name": data["p2"], "duration": f"{dur}分", "channel": before.channel.name}
+                    try: requests.post(GAS_URL, json=payload, timeout=5)
+                    except: pass
+
+bot = MyBot()
+
+# --- 4. コマンド設定（個別・一括） ---
+
+@bot.command()
+@commands.has_permissions(administrator=True)
+async def rules(ctx):
+    """【個別】承認ボタンパネル"""
+    emb = discord.Embed(title="✅ 承認", description="ボタンを押して全機能を解放してください。", color=discord.Color.green())
+    await ctx.send(embed=emb, view=ConsentView())
+
+@bot.command()
+@commands.has_permissions(administrator=True)
+async def setup_roles(ctx):
+    """【個別】地域選択パネル"""
+    emb = discord.Embed(title="地域選択", description="所属地域を選択してください", color=discord.Color.blue())
+    await ctx.send(embed=emb, view=RegionButtons())
+
+@bot.command()
+@commands.has_permissions(administrator=True)
+async def setup_registration(ctx):
+    """【個別】ID登録パネル"""
+    emb = discord.Embed(title="📝 TCG IDの登録", description="以下のボタンを押してIDを入力してください。", color=discord.Color.orange())
+    await ctx.send(embed=emb, view=RegistrationView())
+
+@bot.command()
+@commands.has_permissions(administrator=True)
+async def setup_all(ctx):
+    """【一括】承認・地域・ID登録を順番に出力"""
+    await rules(ctx)
+    await setup_roles(ctx)
+    await setup_registration(ctx)
+
+if __name__ == "__main__":
+    Thread(target=run_flask).start()
+    bot.run(TOKEN)
