@@ -4,17 +4,18 @@ import random
 import feedparser
 import requests
 import datetime
+import os  # 環境変数を読み込むために必要
 
 # ================= 設定項目 =================
-TOKEN = '' # あなたのトークン
-
-GAS_URL = 'https://script.google.com/macros/s/AKfycbyZEE4UCcVTR7Ujsou8aPNov8Nfw3cqnrNsECIpPgDA0X9HdM_94nV70-P5mNSi1Djk/exec'
+# 大事な情報は Render の Environment Variables に登録してください
+TOKEN = os.getenv('DISCORD_TOKEN')
+GAS_URL = os.getenv('GAS_URL')
 
 ROLE_ID = 1478266543480766716
 ANNOUNCE_CH_ID = 1476095569595334718
 WELCOME_CH_ID = 1464168951012393021
 
-# TwitterのURLは、止まっている場合はここを別のものに変えるだけでOKです
+# Twitter(RSS)のURL：現在はここが一番安定しています
 RSS_URL = 'https://nitter.privacydev.net/ucg_jp/rss' 
 KEYWORDS = ['カードデザイン', '公開', '新カード']
 # ===========================================
@@ -22,8 +23,7 @@ KEYWORDS = ['カードデザイン', '公開', '新カード']
 class RegistrationModal(discord.ui.Modal, title='TCG IDの登録'):
     tcg_id_input = discord.ui.TextInput(label='あなたのTCG IDを入力してください', placeholder='例: 12345678', min_length=1, required=True)
     async def on_submit(self, interaction: discord.Interaction):
-        # 3秒エラーを防ぐため「応答保留」にする
-        await interaction.response.defer(ephemeral=True)
+        await interaction.response.defer(ephemeral=True) # 3秒エラー対策
         payload = {"type": "register", "user_id": str(interaction.user.id), "tcg_id": self.tcg_id_input.value}
         requests.post(GAS_URL, json=payload)
         await interaction.followup.send(f"✅ ID: `{self.tcg_id_input.value}` を登録しました！", ephemeral=True)
@@ -104,38 +104,4 @@ class MyBot(commands.Bot):
         if before.channel is None and after.channel is not None and len(after.channel.members) == 2:
             p1, p2 = after.channel.members[0], after.channel.members[1]
             roles = ["先攻", "後攻"]; random.shuffle(roles)
-            msg = await after.channel.send(f"🎲 **自動割り振り**\n{p1.mention} ⇒ **{roles[0]}**\n{p2.mention} ⇒ **{roles[1]}**", silent=True)
-            self.active_messages[after.channel.id] = msg
-            self.match_starts[after.channel.id] = {"time": datetime.datetime.now(), "p1": p1.name, "p2": p2.name}
-        elif before.channel is not None and len(before.channel.members) < 2:
-            if before.channel.id in self.active_messages:
-                try: await self.active_messages[before.channel.id].delete()
-                except: pass
-                del self.active_messages[before.channel.id]
-            if before.channel.id in self.match_starts:
-                data = self.match_starts.pop(before.channel.id)
-                dur = round((datetime.datetime.now() - data["time"]).total_seconds() / 60, 1)
-                requests.post(GAS_URL, json={"type": "match_history", "p1_name": data["p1"], "p2_name": data["p2"], "duration": f"{dur}分", "channel": before.channel.name})
-
-bot = MyBot()
-
-@bot.command()
-async def rules(ctx):
-    emb = discord.Embed(title="✅ 参加の承認", description="上記のルールをすべて読み、同意いただける方は、以下のボタンを押してください。\n押下後、対戦募集チャンネル等の閲覧・書き込みが可能になります。", color=discord.Color.green())
-    await ctx.send(embed=emb, view=ConsentView())
-
-@bot.command()
-async def setup_registration(ctx):
-    emb = discord.Embed(title="📝 TCG IDの登録", description="以下のボタンを押してIDを入力してください。", color=discord.Color.orange())
-    await ctx.send(embed=emb, view=RegistrationView())
-
-@bot.command()
-async def setup_roles(ctx):
-    emb = discord.Embed(title="地域選択", description="所属地域を選択してください", color=discord.Color.blue())
-    await ctx.send(embed=emb, view=RegionButtons())
-
-@bot.command()
-async def setup_all(ctx):
-    await rules(ctx); await setup_roles(ctx); await setup_registration(ctx)
-
-bot.run(TOKEN)
+            msg = await after.channel.send(f"🎲 **自動割り振り**\n{p1.mention} ⇒ **{roles[0]}**\n{p2.mention} ⇒ **
