@@ -5,6 +5,7 @@ import feedparser
 import requests
 import datetime
 import os
+import time
 from threading import Thread
 from flask import Flask
 
@@ -15,11 +16,12 @@ GAS_URL = os.getenv('GAS_URL')
 ROLE_ID = 1478266543480766716
 ANNOUNCE_CH_ID = 1476095569595334718
 
-# Nitterサーバーリスト
+# ★ 現在、クラウドIPからでも比較的「返事」を返してくれるサーバーを厳選
 RSS_URLS = [
-    'https://nitter.poast.org/ucg_jp/rss',
     'https://nitter.privacydev.net/ucg_jp/rss',
-    'https://nitter.moomoo.me/ucg_jp/rss'
+    'https://nitter.poast.org/ucg_jp/rss',
+    'https://nitter.uni-sonia.com/ucg_jp/rss',
+    'https://nitter.x86-64-unknown-linux-gnu.zip/ucg_jp/rss'
 ]
 KEYWORDS = ['カードデザイン', '公開', '新カード']
 # ===========================================
@@ -36,24 +38,23 @@ class RegistrationModal(discord.ui.Modal, title='TCG IDの登録'):
     tcg_id_input = discord.ui.TextInput(label='あなたのTCG ID', placeholder='例: 12345678', min_length=1, required=True)
     async def on_submit(self, interaction: discord.Interaction):
         await interaction.response.defer(ephemeral=True)
-        payload = {"type": "register", "user_id": str(interaction.user.id), "tcg_id": self.tcg_id_input.value}
-        try: requests.post(GAS_URL, json=payload, timeout=10)
+        try:
+            requests.post(GAS_URL, json={"type": "register", "user_id": str(interaction.user.id), "tcg_id": self.tcg_id_input.value}, timeout=10)
         except: pass
         await interaction.followup.send(f"✅ ID: `{self.tcg_id_input.value}` を登録しました！", ephemeral=True)
 
-# --- 各種ボタンビュー ---
+# --- ボタンビュー ---
 class MainViews(discord.ui.View):
     def __init__(self): super().__init__(timeout=None)
-
-    @discord.ui.button(label="✅ 同意して全機能を解放", style=discord.ButtonStyle.green, custom_id="c_btn_v7")
+    @discord.ui.button(label="✅ 同意して全機能を解放", style=discord.ButtonStyle.green, custom_id="c_v8")
     async def agree(self, interaction: discord.Interaction, button: discord.ui.Button):
         role = interaction.guild.get_role(ROLE_ID)
         try:
             await interaction.user.add_roles(role)
             await interaction.response.send_message("承認されました！", ephemeral=True)
-        except: await interaction.response.send_message("エラー：役職の順位がボットより上になっています。", ephemeral=True)
+        except: await interaction.response.send_message("エラー：役職の順序を確認してください。", ephemeral=True)
 
-    @discord.ui.button(label="📝 TCG IDを登録する", style=discord.ButtonStyle.primary, custom_id="r_btn_v7")
+    @discord.ui.button(label="📝 TCG IDを登録する", style=discord.ButtonStyle.primary, custom_id="r_v8")
     async def register(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.send_modal(RegistrationModal())
 
@@ -61,7 +62,6 @@ class RegionButtons(discord.ui.View):
     def __init__(self):
         super().__init__(timeout=None)
         self.regions = ["東北・北海道", "関東", "北信越", "中部", "関西", "四国・中国", "九州・沖縄"]
-    
     async def update_role(self, it, name):
         guild = it.guild; member = it.user
         to_rem = [discord.utils.get(guild.roles, name=r) for r in self.regions if discord.utils.get(guild.roles, name=r) in member.roles]
@@ -87,7 +87,7 @@ class RegionButtons(discord.ui.View):
 class MyBot(commands.Bot):
     def __init__(self):
         intents = discord.Intents.default()
-        intents.message_content = True # ★これがないとコマンドが反応しません
+        intents.message_content = True
         intents.members = True
         intents.guilds = True
         intents.voice_states = True
@@ -106,22 +106,42 @@ class MyBot(commands.Bot):
         await self.perform_check()
 
     async def perform_check(self, ctx=None):
-        headers = {'User-Agent': 'Mozilla/5.0'}
+        # 通信のヘッダーをさらに詳細にして「人間味」を出す
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36',
+            'Accept-Language': 'ja,en-US;q=0.9,en;q=0.8'
+        }
+        
         for url in RSS_URLS:
             try:
-                response = requests.get(url, headers=headers, timeout=10)
+                # タイムアウトを少し長めに設定
+                response = requests.get(url, headers=headers, timeout=20)
+                if response.status_code != 200:
+                    print(f"URL失敗 ({response.status_code}): {url}")
+                    continue
+                
                 feed = feedparser.parse(response.content)
-                if not feed.entries: continue
+                if not feed.entries:
+                    print(f"記事空っぽ: {url}")
+                    continue
+                
                 latest = feed.entries[0]
                 if not ctx and self.last_link == latest.link: return
-                if any(k in latest.title for k in KEYWORDS) or ctx:
+                
+                title = latest.title
+                if any(k in title for k in KEYWORDS) or ctx:
                     ch = self.get_channel(ANNOUNCE_CH_ID)
-                    if ch: await ch.send(f"📢 **Twitter速報**\n{latest.title}\n{latest.link}")
+                    if ch: await ch.send(f"📢 **Twitter速報**\n{title}\n{latest.link}")
+                
                 self.last_link = latest.link
                 if ctx: await ctx.send(f"✅ 取得成功: {url}")
-                return
-            except: continue
-        if ctx: await ctx.send("❌ 全てのURLがダウンしています。")
+                return # どこか一つ成功すれば終了
+            except Exception as e:
+                print(f"接続エラー ({url}): {e}")
+                time.sleep(2) # 少し待ってから次のURLへ
+                continue
+        
+        if ctx: await ctx.send("❌ 全ての取得先から拒否されました。RenderのIPが制限されているようです。")
 
     async def on_voice_state_update(self, member, before, after):
         if before.channel is None and after.channel is not None and len(after.channel.members) == 2:
@@ -143,24 +163,15 @@ class MyBot(commands.Bot):
 
 bot = MyBot()
 
-# --- コマンド ---
-@bot.command()
-async def ping(ctx):
-    await ctx.send(f"🏓 Pong! (通信速度: {round(bot.latency * 1000)}ms)")
-
 @bot.command()
 async def tw_check(ctx):
-    await ctx.send("🔍 Twitterチェック開始...")
+    await ctx.send("🔍 最終チェックを開始します...")
     await bot.perform_check(ctx=ctx)
 
 @bot.command()
-async def rules(ctx):
+async def setup_all(ctx):
     emb = discord.Embed(title="✅ 参加の承認", description="上記のルールをすべて読み、同意いただける方は、以下のボタンを押してください。\n押下後、対戦募集チャンネル等の閲覧・書き込みが可能になります。", color=discord.Color.green())
     await ctx.send(embed=emb, view=MainViews())
-
-@bot.command()
-async def setup_all(ctx):
-    await rules(ctx)
     await ctx.send(embed=discord.Embed(title="地域選択", description="所属地域を選択してください", color=discord.Color.blue()), view=RegionButtons())
 
 if __name__ == "__main__":
