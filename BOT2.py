@@ -118,3 +118,76 @@ class MyBot(commands.Bot):
     @tasks.loop(minutes=15)
     async def check_twitter(self):
         try:
+            res = requests.get(GAS_URL, params={'type': 'fetch_rss'}, timeout=20)
+            feed = feedparser.parse(res.text)
+            if not feed.entries: return
+            latest = feed.entries[0]
+            if self.last_link == latest.link: return
+            keywords = ['カードデザイン', '公開', '新カード']
+            if any(k in latest.title for k in keywords):
+                ch = self.get_channel(ANNOUNCE_CH_ID)
+                if ch: await ch.send(f"📢 **Twitter速報**\n{latest.title}\n{latest.link}")
+            self.last_link = latest.link
+        except: pass
+
+    async def on_voice_state_update(self, member, before, after):
+        # 対戦開始時
+        if before.channel is None and after.channel is not None and len(after.channel.members) == 2:
+            p1, p2 = after.channel.members[0], after.channel.members[1]
+            self.match_starts[after.channel.id] = {
+                "time": datetime.datetime.now(), "p1_name": p1.name, "p2_name": p2.name, "p1_id": p1.id, "p2_id": p2.id
+            }
+            # メンションなし ＋ サイレント送信 (赤いバッジ回避)
+            roles = ["先攻", "後攻"]; random.shuffle(roles)
+            await after.channel.send(f"🎲 **自動割り振り**\n**{p1.display_name}** ⇒ **{roles[0]}**\n**{p2.display_name}** ⇒ **{roles[1]}**", silent=True)
+        
+        # 対戦終了時
+        elif before.channel is not None and len(before.channel.members) < 2:
+            if before.channel.id in self.match_starts:
+                data = self.match_starts.pop(before.channel.id)
+                dur = round((datetime.datetime.now() - data["time"]).total_seconds() / 60, 1)
+                # スプシ送信のみ (Discordには何も書き込まない)
+                requests.post(GAS_URL, json={
+                    "type": "match_pending", "p1_id": str(data["p1_id"]), "p1_name": data["p1_name"],
+                    "p2_id": str(data["p2_id"]), "p2_name": data["p2_name"], 
+                    "duration": f"{dur}分", "channel": before.channel.name
+                })
+
+bot = MyBot()
+
+# --- E. コマンド群 ---
+
+@bot.command()
+@commands.has_permissions(administrator=True)
+async def setup_all(ctx):
+    """一括セットアップパネル"""
+    await ctx.send(embed=discord.Embed(title="🎮 サーバー初期設定", description="下のボタンから各登録とポイント確認ができます。", color=discord.Color.green()), view=MainViews())
+    await ctx.send(embed=discord.Embed(title="📍 地域選択", description="所属地域を設定してください。", color=discord.Color.blue()), view=RegionButtons())
+
+@bot.command()
+@commands.has_permissions(administrator=True)
+async def setup_points(ctx):
+    """個別：ポイント確認ボタン（青色）"""
+    await ctx.send(embed=discord.Embed(title="🏆 ポイント確認", description="ボタンを押すと現在の累計ポイントを表示します。", color=discord.Color.blue()), view=PointsCheckView())
+
+@bot.command()
+@commands.has_permissions(administrator=True)
+async def setup_registration(ctx):
+    """個別：ID登録ボタン"""
+    await ctx.send(embed=discord.Embed(title="📝 TCG IDの登録", description="以下のボタンからIDを入力してください。", color=discord.Color.orange()), view=RegistrationView())
+
+@bot.command()
+@commands.has_permissions(administrator=True)
+async def rules(ctx):
+    """個別：参加承認パネル"""
+    await ctx.send(embed=discord.Embed(title="✅ 参加承認 ＆ 📝 ID登録", color=discord.Color.green()), view=MainViews())
+
+@bot.command()
+@commands.has_permissions(administrator=True)
+async def setup_roles(ctx):
+    """個別：地域選択パネル"""
+    await ctx.send(embed=discord.Embed(title="📍 地域選択", color=discord.Color.blue()), view=RegionButtons())
+
+if __name__ == "__main__":
+    Thread(target=run_flask).start()
+    bot.run(TOKEN)
