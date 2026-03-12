@@ -53,7 +53,7 @@ class RegistrationModal(discord.ui.Modal, title='TCG IDの登録'):
 # 1. 承認パネル専用 (!rules)
 class RulesOnlyView(discord.ui.View):
     def __init__(self): super().__init__(timeout=None)
-    @discord.ui.button(label="✅ 同意して全機能を解放", style=discord.ButtonStyle.green, custom_id="v9_agree")
+    @discord.ui.button(label="✅ 同意して全機能を解放", style=discord.ButtonStyle.green, custom_id="v_final_agree_v9")
     async def agree(self, it, b):
         role = it.guild.get_role(ROLE_ID)
         try:
@@ -64,14 +64,14 @@ class RulesOnlyView(discord.ui.View):
 # 2. ID登録パネル専用 (!setup_registration)
 class RegistrationOnlyView(discord.ui.View):
     def __init__(self): super().__init__(timeout=None)
-    # ★ボタンの色を Primary（青）に変更
-    @discord.ui.button(label="📝 TCG IDを登録する", style=discord.ButtonStyle.primary, custom_id="v9_reg")
+    # ボタンの色を Primary（青）に変更
+    @discord.ui.button(label="📝 TCG IDを登録する", style=discord.ButtonStyle.primary, custom_id="v_final_reg_v9")
     async def reg(self, it, b): await it.response.send_modal(RegistrationModal())
 
 # 3. ポイント確認パネル専用 (!setup_points)
 class PointsOnlyView(discord.ui.View):
     def __init__(self): super().__init__(timeout=None)
-    @discord.ui.button(label="🏆 累計ポイントを確認する", style=discord.ButtonStyle.primary, custom_id="v9_pts")
+    @discord.ui.button(label="🏆 累計ポイントを確認する", style=discord.ButtonStyle.primary, custom_id="v_final_pts_v9")
     async def check(self, it, b): await fetch_user_points(it)
 
 # 4. 地域選択パネル専用 (!setup_roles)
@@ -119,7 +119,7 @@ class MyBot(commands.Bot):
         self.add_view(PointsOnlyView())
         self.add_view(RegionButtonsView())
         if not self.check_twitter.is_running(): self.check_twitter.start()
-        print(f'Logged in as {self.user.name} (UI-Updated Version)')
+        print(f'Logged in as {self.user.name} (V9 Final Clean)')
 
     @tasks.loop(minutes=15)
     async def check_twitter(self):
@@ -164,35 +164,28 @@ bot = MyBot()
 @bot.command()
 @commands.has_permissions(administrator=True)
 async def rules(ctx):
-    """「承認」パネルを表示"""
     await ctx.send(embed=discord.Embed(title="✅ 参加承認", description="規約に同意してメンバー役職を受け取ります。", color=discord.Color.green()), view=RulesOnlyView())
 
 @bot.command()
 @commands.has_permissions(administrator=True)
 async def setup_registration(ctx):
-    """【修正】「TCG IDの登録」パネルを表示（説明文を削除 ＆ ボタン青）"""
+    # 説明文(description)を削除 ＆ 埋め込みを青色に
     await ctx.send(embed=discord.Embed(title="📝 TCG IDの登録", color=discord.Color.blue()), view=RegistrationOnlyView())
 
 @bot.command()
 @commands.has_permissions(administrator=True)
 async def setup_points(ctx):
-    """「ポイント確認」パネルを表示（ボタン青）"""
     await ctx.send(embed=discord.Embed(title="🏆 ポイント確認", description="現在の累計ポイントを確認します。", color=discord.Color.blue()), view=PointsOnlyView())
 
 @bot.command()
 @commands.has_permissions(administrator=True)
 async def setup_roles(ctx):
-    """「地域選択」パネルを表示"""
     await ctx.send(embed=discord.Embed(title="📍 地域選択", description="所属地域を選択して役職を受け取ります。", color=discord.Color.blue()), view=RegionButtonsView())
 
 @bot.command()
 @commands.has_permissions(administrator=True)
 async def setup_all(ctx):
-    """すべてのパネルを個別に連続で出す"""
-    await rules(ctx)
-    await setup_registration(ctx)
-    await setup_points(ctx)
-    await setup_roles(ctx)
+    await rules(ctx); await setup_registration(ctx); await setup_points(ctx); await setup_roles(ctx)
 
 if __name__ == "__main__":
     Thread(target=run_flask).start()
