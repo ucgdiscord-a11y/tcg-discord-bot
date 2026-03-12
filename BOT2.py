@@ -34,10 +34,10 @@ async def fetch_user_points(interaction: discord.Interaction):
         else:
             await interaction.followup.send(f"🏆 **{interaction.user.display_name}** さんの現在の累計ポイントは **{data}pt** です！", ephemeral=True)
     except:
-        await interaction.followup.send("⚠️ ポイントの取得に失敗しました。時間をおいて試してください。", ephemeral=True)
+        await interaction.followup.send("⚠️ ポイントの取得に失敗しました。", ephemeral=True)
 
 # --- B. TCG ID登録モーダル ---
-class RegistrationModal(discord.ui.Modal, title='TCG IDの登録'):
+class RegistrationModal(discord.ui.Modal, title='TCG ID의 등록'):
     tcg_id_input = discord.ui.TextInput(label='あなたのTCG ID', placeholder='例: 12345678', min_length=1)
     async def on_submit(self, interaction: discord.Interaction):
         await interaction.response.defer(ephemeral=True)
@@ -46,35 +46,28 @@ class RegistrationModal(discord.ui.Modal, title='TCG IDの登録'):
             requests.post(GAS_URL, json=payload, timeout=10)
             await interaction.followup.send(f"✅ ID: `{self.tcg_id_input.value}` を登録しました！", ephemeral=True)
         except:
-            await interaction.followup.send("⚠️ スプレッドシートへの登録に失敗しました。", ephemeral=True)
+            await interaction.followup.send("⚠️ 登録に失敗しました。", ephemeral=True)
 
 # --- C. ボタン View 群 ---
-
-# 個別設置用：ポイント確認ボタン（青色）
 class PointsCheckView(discord.ui.View):
     def __init__(self): super().__init__(timeout=None)
-    @discord.ui.button(label="🏆 累計ポイントを確認する", style=discord.ButtonStyle.primary, custom_id="v6_btn_pts_only")
+    @discord.ui.button(label="🏆 累計ポイントを確認する", style=discord.ButtonStyle.primary, custom_id="v_final_pts_only")
     async def check(self, it, b): await fetch_user_points(it)
 
-# メインパネル（承認・登録・ポイント確認）
 class MainViews(discord.ui.View):
     def __init__(self): super().__init__(timeout=None)
-    @discord.ui.button(label="✅ 同意して全機能を解放", style=discord.ButtonStyle.green, custom_id="v6_btn_agree")
+    @discord.ui.button(label="✅ 同意して全機能を解放", style=discord.ButtonStyle.green, custom_id="v_final_agree")
     async def agree(self, it, b):
         role = it.guild.get_role(ROLE_ID)
-        try:
-            await it.user.add_roles(role)
-            await it.response.send_message("承認されました！", ephemeral=True)
-        except: await it.response.send_message("エラー：役職順序を確認してください。", ephemeral=True)
+        await it.user.add_roles(role)
+        await it.response.send_message("承認されました！", ephemeral=True)
     
-    @discord.ui.button(label="📝 TCG IDを登録する", style=discord.ButtonStyle.secondary, custom_id="v6_btn_reg")
+    @discord.ui.button(label="📝 TCG IDを登録する", style=discord.ButtonStyle.secondary, custom_id="v_final_reg")
     async def reg(self, it, b): await it.response.send_modal(RegistrationModal())
 
-    # ★【修正】ポイント確認ボタンを青色（primary）に
-    @discord.ui.button(label="🏆 累計ポイントを確認する", style=discord.ButtonStyle.primary, custom_id="v6_btn_pts_main")
+    @discord.ui.button(label="🏆 累計ポイントを確認する", style=discord.ButtonStyle.primary, custom_id="v_final_pts_main")
     async def check(self, it, b): await fetch_user_points(it)
 
-# 地域選択ボタン（すべて青色）
 class RegionButtons(discord.ui.View):
     def __init__(self):
         super().__init__(timeout=None)
@@ -86,19 +79,19 @@ class RegionButtons(discord.ui.View):
         new = discord.utils.get(guild.roles, name=name)
         if new: await member.add_roles(new); await it.response.send_message(f"✅ 「{name}」に設定しました！", ephemeral=True)
     
-    @discord.ui.button(label="東北・北海道", style=discord.ButtonStyle.primary, custom_id="r1")
+    @discord.ui.button(label="東北・北海道", style=discord.ButtonStyle.primary, custom_id="fr1")
     async def b1(self, it, b): await self.update_role(it, "東北・北海道")
-    @discord.ui.button(label="関東", style=discord.ButtonStyle.primary, custom_id="r2")
+    @discord.ui.button(label="関東", style=discord.ButtonStyle.primary, custom_id="fr2")
     async def b2(self, it, b): await self.update_role(it, "関東")
-    @discord.ui.button(label="北信越", style=discord.ButtonStyle.primary, custom_id="r3")
+    @discord.ui.button(label="北信越", style=discord.ButtonStyle.primary, custom_id="fr3")
     async def b3(self, it, b): await self.update_role(it, "北信越")
-    @discord.ui.button(label="中部", style=discord.ButtonStyle.primary, custom_id="r4")
+    @discord.ui.button(label="中部", style=discord.ButtonStyle.primary, custom_id="fr4")
     async def b4(self, it, b): await self.update_role(it, "中部")
-    @discord.ui.button(label="関西", style=discord.ButtonStyle.primary, custom_id="r5")
+    @discord.ui.button(label="関西", style=discord.ButtonStyle.primary, custom_id="fr5")
     async def b5(self, it, b): await self.update_role(it, "関西")
-    @discord.ui.button(label="四国・中国", style=discord.ButtonStyle.primary, row=1, custom_id="r6")
+    @discord.ui.button(label="四国・中国", style=discord.ButtonStyle.primary, row=1, custom_id="fr6")
     async def b6(self, it, b): await self.update_role(it, "四国・中国")
-    @discord.ui.button(label="九州・沖縄", style=discord.ButtonStyle.primary, row=1, custom_id="r7")
+    @discord.ui.button(label="九州・沖縄", style=discord.ButtonStyle.primary, row=1, custom_id="fr7")
     async def b7(self, it, b): await self.update_role(it, "九州・沖縄")
 
 # --- D. ボット本体 ---
@@ -113,7 +106,7 @@ class MyBot(commands.Bot):
     async def on_ready(self):
         self.add_view(MainViews()); self.add_view(PointsCheckView()); self.add_view(RegionButtons())
         if not self.check_twitter.is_running(): self.check_twitter.start()
-        print(f'Logged in as {self.user.name} (Blue-UI Version)')
+        print(f'Logged in as {self.user.name}')
 
     @tasks.loop(minutes=15)
     async def check_twitter(self):
@@ -131,22 +124,29 @@ class MyBot(commands.Bot):
         except: pass
 
     async def on_voice_state_update(self, member, before, after):
-        # 対戦開始時
+        # 【対戦開始時】
         if before.channel is None and after.channel is not None and len(after.channel.members) == 2:
             p1, p2 = after.channel.members[0], after.channel.members[1]
             self.match_starts[after.channel.id] = {
                 "time": datetime.datetime.now(), "p1_name": p1.name, "p2_name": p2.name, "p1_id": p1.id, "p2_id": p2.id
             }
-            # メンションなし ＋ サイレント送信 (赤いバッジ回避)
             roles = ["先攻", "後攻"]; random.shuffle(roles)
-            await after.channel.send(f"🎲 **自動割り振り**\n**{p1.display_name}** ⇒ **{roles[0]}**\n**{p2.display_name}** ⇒ **{roles[1]}**", silent=True)
+            
+            # ★【修正】通知バッジを残さないために：
+            # 1. メンションなし（display_name）
+            # 2. サイレント送信（ピコンと鳴らさない）
+            # 3. 60秒後にメッセージを自動削除（これでアプリアイコンの数字が消えます）
+            await after.channel.send(
+                f"🎲 **自動割り振り**\n**{p1.display_name}** ⇒ **{roles[0]}**\n**{p2.display_name}** ⇒ **{roles[1]}**", 
+                silent=True, 
+                delete_after=60
+            )
         
-        # 対戦終了時
+        # 【対戦終了時】裏側でGAS送信のみ（Discordには無言）
         elif before.channel is not None and len(before.channel.members) < 2:
             if before.channel.id in self.match_starts:
                 data = self.match_starts.pop(before.channel.id)
                 dur = round((datetime.datetime.now() - data["time"]).total_seconds() / 60, 1)
-                # スプシ送信のみ (Discordには何も書き込まない)
                 requests.post(GAS_URL, json={
                     "type": "match_pending", "p1_id": str(data["p1_id"]), "p1_name": data["p1_name"],
                     "p2_id": str(data["p2_id"]), "p2_name": data["p2_name"], 
@@ -155,38 +155,11 @@ class MyBot(commands.Bot):
 
 bot = MyBot()
 
-# --- E. コマンド群 ---
-
 @bot.command()
 @commands.has_permissions(administrator=True)
 async def setup_all(ctx):
-    """一括セットアップパネル"""
     await ctx.send(embed=discord.Embed(title="🎮 サーバー初期設定", description="下のボタンから各登録とポイント確認ができます。", color=discord.Color.green()), view=MainViews())
     await ctx.send(embed=discord.Embed(title="📍 地域選択", description="所属地域を設定してください。", color=discord.Color.blue()), view=RegionButtons())
-
-@bot.command()
-@commands.has_permissions(administrator=True)
-async def setup_points(ctx):
-    """個別：ポイント確認ボタン（青色）"""
-    await ctx.send(embed=discord.Embed(title="🏆 ポイント確認", description="ボタンを押すと現在の累計ポイントを表示します。", color=discord.Color.blue()), view=PointsCheckView())
-
-@bot.command()
-@commands.has_permissions(administrator=True)
-async def setup_registration(ctx):
-    """個別：ID登録ボタン"""
-    await ctx.send(embed=discord.Embed(title="📝 TCG IDの登録", description="以下のボタンからIDを入力してください。", color=discord.Color.orange()), view=RegistrationView())
-
-@bot.command()
-@commands.has_permissions(administrator=True)
-async def rules(ctx):
-    """個別：参加承認パネル"""
-    await ctx.send(embed=discord.Embed(title="✅ 参加承認 ＆ 📝 ID登録", color=discord.Color.green()), view=MainViews())
-
-@bot.command()
-@commands.has_permissions(administrator=True)
-async def setup_roles(ctx):
-    """個別：地域選択パネル"""
-    await ctx.send(embed=discord.Embed(title="📍 地域選択", color=discord.Color.blue()), view=RegionButtons())
 
 if __name__ == "__main__":
     Thread(target=run_flask).start()
